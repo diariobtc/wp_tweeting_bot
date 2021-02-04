@@ -1,3 +1,11 @@
+prompt_msg() {
+ echo
+ echo "============================================================================="
+ echo $1
+ echo "============================================================================="
+ echo
+}
+
 abort_if_var_unset() {
   # Usage: abort_if_var_unset "OPENSSL_VERSION" ${OPENSSL_VERSION}
   var_name=${1}
