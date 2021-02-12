@@ -74,8 +74,6 @@ oauth_consumer_secret=
 If you want to run a bunch of tweets from a .txt file (instead of an RSS feed) this is how you configure the tweeting bot
 Most configuration keys are the same as the prior section, except for the feed source, instead of `feed_url` you will pass the path to the .txt file containing your tweets with `feed_path`. The Bot expects one tweet per line.
 
-*Example:*
-
 `feed_path (string)` text file with tweets disk path, e.g. `feed_path=/home/user/feeds/rotation_file_1.txt`
 
 `repetition_interval_in_seconds (integer)` how many seconds to wait until repeating a tweet
