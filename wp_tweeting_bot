@@ -34,6 +34,7 @@ class Feed(object):
         self.intervals_between_tweets_in_seconds = config.getint(section, 'intervals_between_tweets_in_seconds')
         self.max_days_in_rotation = -1
         self.max_seconds_in_rotation = -1
+        self.is_running = True
 
         if config.has_option(section, 'max_days_in_rotation'):
             self.max_days_in_rotation = config.getint(section, 'max_days_in_rotation')
@@ -314,6 +315,7 @@ class URLFeed(Feed):
                     time.sleep(self.intervals_between_tweets_in_seconds)
                 else:
                     print("[DRY-RUN (", i, ")] ", "sleep(", self.intervals_between_tweets_in_seconds,")\n")
+        self.is_running = False
 
     @staticmethod
     def fetch_html(url):
@@ -453,16 +455,19 @@ def is_feed_running(lock_tcp_port):
         sock.close()
         return False
 
-def start_feed_lock_tcp_server(lock_tcp_port):
+def start_feed_lock_tcp_server(lock_tcp_port,feed):
     server_address = ('localhost', lock_tcp_port)
     serversock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     serversock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     serversock.bind(server_address)
     serversock.listen(5)
-    while 1:
+    while feed.is_running:
         print("Listening for connections on port %d" % lock_tcp_port)
         clientsock, addr = serversock.accept()
         print("Got connection from %s", clientsock)
+    serversock.shutdown(socket.SHUT_RDRW)
+    serversock.close()
+    print("Shutdown server on port %d" % lock_tcp_port)
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
@@ -485,7 +490,7 @@ if __name__ == '__main__':
                 continue
             else:
                 print("Found no tcp server on port %d for %s, starting our own" % (lock_tcp_port, section_name))
-                thread = threading.Thread(target=start_feed_lock_tcp_server, args=(lock_tcp_port,))
+                thread = threading.Thread(target=start_feed_lock_tcp_server, args=(lock_tcp_port,feed,))
                 thread.start()
 
         thread = threading.Thread(target=feed.process_tweets)
