@@ -1,4 +1,4 @@
 #!/bin/bash
 source ./common.sh
 abort_if_var_unset "WP_TWEETING_BOT_HOME" ${WP_TWEETING_BOT_HOME}
-nohup ${WP_TWEETING_BOT_HOME}/wp_tweeting_bot /home/ubuntu/src/wp_tweeting_bot/config.conf > feed_bot.log &
+nohup ${WP_TWEETING_BOT_HOME}/wp_tweeting_bot /home/ubuntu/wp_tweeting_bot/config.conf > feed_bot.log &
