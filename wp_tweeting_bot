@@ -468,8 +468,17 @@ def start_feed_lock_tcp_server(lock_tcp_port,feed):
     feed.lock_tcp_port = lock_tcp_port
     while True:
         print("Listening for connections on port %d" % lock_tcp_port)
-        clientsock, addr = serversock.accept()
-        print("Got connection from %s", clientsock)
+        try:
+            clientsock, addr = serversock.accept()
+            print("Got connection from %s", clientsock)
+        except Exception as e:
+            print("start_feed_lock_tcp_server.accept() error -> {}", e)
+            serversock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            serversock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            serversock.bind(server_address)
+            serversock.listen(5)
+            feed.serversock = serversock
+            feed.lock_tcp_port = lock_tcp_port
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
