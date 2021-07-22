@@ -191,9 +191,12 @@ class FileFeed(Feed):
             self.tweets[index] = tweet # update the list with the modified dict
 
             index = inc_index(index, self.tweets)
-            print("\nsleeping ", self.intervals_between_tweets_in_seconds, "seconds... ZZzzz zzz")
             if not self.dry_run:
+                print("\nsleeping ", self.intervals_between_tweets_in_seconds, "seconds... ZZzzz zzz")
                 time.sleep(self.intervals_between_tweets_in_seconds)
+            else:
+                print("[DRY-RUN sleeping 1 sec]")
+                time.sleep(1)
 
     @staticmethod
     def load_tweets(feed_path, shuffle):
@@ -313,8 +316,10 @@ class URLFeed(Feed):
                 if not self.dry_run:
                     time.sleep(self.intervals_between_tweets_in_seconds)
                 else:
-                    print("[DRY-RUN (", i, ")] ", "sleep(", self.intervals_between_tweets_in_seconds,")\n")
+                    print("[DRY-RUN (", i, ")] ", "sleep(1) instead of (", self.intervals_between_tweets_in_seconds,")\n")
+                    time.sleep(1)
         if self.serversock is not None:
+            print("Done with all the tweets, shutting down socket on port %d" % self.lock_tcp_port)
             self.serversock.shutdown(socket.SHUT_RDWR)
             self.serversock.close()
             print("Shutdown server on port %d" % self.lock_tcp_port)
@@ -473,12 +478,8 @@ def start_feed_lock_tcp_server(lock_tcp_port,feed):
             print("Got connection from %s", clientsock)
         except Exception as e:
             print("start_feed_lock_tcp_server.accept() error -> {}", e)
-            serversock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            serversock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            serversock.bind(server_address)
-            serversock.listen(5)
-            feed.serversock = serversock
-            feed.lock_tcp_port = lock_tcp_port
+            print("serversock was shutdown, ending start_feed_lock_tcp_server, not accepting more connections")
+            return
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
