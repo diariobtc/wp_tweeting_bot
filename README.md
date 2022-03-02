@@ -1,6 +1,6 @@
 # wp_tweeting_bot
 
-Python Tweeting bot to promote the last N posts of a blog on twitter.
+Python Tweeting bot to promote the last N posts of a blog on twitter or to rotate tweets saved in text files (one tweet per line).
 
 Your tweets won't be read by all your followers if you just tweet them once.
 Your tweets will be more attractive if they have image attachments.
@@ -26,6 +26,19 @@ You can configure multiple twitter accounts on multiple RSS feeds on a single co
 
 Sample config file:
 ```
+[my_text_file_based_rotation_feed]
+feed_path=/home/user/feeds/rotation_file_1.txt
+max_days_in_rotation=-1
+intervals_between_tweets_in_seconds=12600
+repetition_interval_in_seconds=43200
+lock_tcp_port=60001
+dry_run=false
+shuffle=true
+oauth_token=
+oauth_token_secret=
+oauth_consumer_key=
+oauth_consumer_secret=
+
 [yourblog.com]
 feed_url=https://www.yourblog.com/index.php/feed/
 num_last_tweets=4
