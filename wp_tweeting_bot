@@ -10,13 +10,12 @@ import ssl
 import threading
 import random
 import socket
-from twitter import Twitter2, OAuth2, TwitterHTTPError
+import tweepy
 from bs4 import BeautifulSoup
 
 TWITTER_CONSIDERED_URL_LENGHT = 23
 TWEET_MAX_LENGHT = 280
 MAX_TITLE_LENGTH = 231
-og_image_pattern = re.compile('.*og:image" content="(.*?)".*?\/>')
 
 class Feed(object):
     """
@@ -37,11 +36,17 @@ class Feed(object):
             self.max_seconds_in_rotation = self.max_days_in_rotation * 24 * 60 * 60
 
         # Auth Credentials
-        self.oauth2_bearer_token = config.get(section, 'oauth2_bearer_token')
-        print("Feed.__init__: oauth2_bearer_token={}".format(self.oauth2_bearer_token))
-        self.oauth2 = OAuth2(bearer_token=self.oauth2_bearer_token)
-        self.twitter_api = Twitter2(auth=self.oauth2)
-        self.twitter_upload_api = Twitter2(auth=self.oauth2, domain='upload.twitter.com')
+        self.api_key = config.get(section, 'api_key')
+        self.api_secret = config.get(section, 'api_secret')
+        self.access_token = config.get(section, 'access_token')
+        self.access_token_secret = config.get(section, 'access_token_secret')
+        
+        self.twitter_client = tweepy.Client(
+            consumer_key = self.api_key,
+            consumer_secret = self.api_secret,
+            access_token = self.access_token,
+            access_token_secret = self.access_token_secret
+        )
 
     def process_tweets(self):
         raise NotImplementedError
@@ -183,8 +188,8 @@ class FileFeed(Feed):
             else:
                 try:
                     print(f"FileFeed.process_tweets: tweeting index={index}")
-                    self.twitter_api.statuses.update(status=tweet['msg'])
-                except TwitterHTTPError as e:
+                    self.twitter_client.create_tweet(text=tweet['msg'])
+                except Exception as e:
                     print(e)
                     print("FileFeed.process_tweets: Skipping ", tweet['msg'], ' considered as a duplicate')
 
@@ -254,7 +259,7 @@ class URLFeed(Feed):
         if self.num_last_tweets != -1:
             num_tweets = min(self.num_last_tweets, len(feed_dict.entries))
 
-        if self.dry_run and num_tweets is 0:
+        if self.dry_run and num_tweets == 0:
             print("URLFeed.process_tweets: [DRY-RUN] Got", num_tweets,"tweets")
 
         for i in range(num_tweets):
@@ -282,38 +287,15 @@ class URLFeed(Feed):
                 elif self.dry_run:
                     print("URLFeed.process_tweets: [DRY-RUN] (",i, ")] has expirable category ", expirable_category_matched.category_name ," but still fresh")
 
-            if self.attach_featured_images:
-                featured_image_url = None
-                if not self.dry_run:
-                    featured_image_url = URLFeed.scrape_entry_og_image(entry)
-                else:
-                    print("URLFeed.process_tweets: [DRY-RUN] scrape and download og:image for entry " + entry.link)
-
-                if featured_image_url is not None:
-                    if not self.dry_run:
-                        img_data = download_image(featured_image_url)
-                        if img_data is not None:
-                          img_id = self.twitter_upload_api.media.upload(media=img_data)["media_id_string"]
-                          self.twitter_api.statuses.update(status=title + " " + entry.link, media_ids = img_id) # Call twitter API
-                        else:
-                          self.twitter_api.statuses.update(status=title + " " + entry.link)
-                    else:
-                        print("URLFeed.process_tweets: [DRY-RUN (", i, ")] ", title + " " + entry.link, " (+img attachment - ", featured_image_url, ")")
-                        print("URLFeed.process_tweets: [DRY-RUN (", i, ")] time() -> ", time.mktime(entry.published_parsed))
-                        img_data = download_image(featured_image_url)
-                        print("URLFeed.process_tweets: [DRY-RUN (", i, ")] ", len(img_data))
-                else:
-                    print("URLFeed.process_tweets: Could not scrape featured image url from ", entry.link, " (regex might need maintenance)")
+            if not self.dry_run:
+                try:
+                    self.twitter_client.create_tweet(text=title + " " + entry.link) # Call twitter API
+                except Exception as e:
+                    print("URLFeed.process_tweets: Exception", e)
+                    print("URLFeed.process_tweets: Could not tweet status=" + title)
+                    continue
             else:
-                if not self.dry_run:
-                    try:
-                        self.twitter_api.statuses.update(status=title + " " + entry.link) # Call twitter API
-                    except TwitterHTTPError as e:
-                        print("URLFeed.process_tweets: TwitterHTTPError", e)
-                        print("URLFeed.process_tweets: Could not tweet status=" + title)
-                        continue
-                else:
-                    print("URLFeed.process_tweets: [DRY-RUN (", i, ")] ", title + " " + entry.link)
+                print("URLFeed.process_tweets: [DRY-RUN (", i, ")] ", title + " " + entry.link)
 
             if self.intervals_between_tweets_in_seconds > 0:
                 if not self.dry_run:
@@ -334,21 +316,6 @@ class URLFeed(Feed):
         html = f.read()
         f.close()
         return html
-
-    @staticmethod
-    def scrape_entry_og_image(entry):
-        """
-        Download a feed's entry HTML and parse it to find the og:image in the entry if available.
-
-        :param entry:
-        :return: the url of the featured image if found, otherwise None
-        """
-        featured_image_url = None
-        html = URLFeed.fetch_html(entry.link)
-        match = og_image_pattern.search(html.decode('utf-8'))
-        if match is not None:
-            featured_image_url = match.group(1)
-        return featured_image_url
 
     @staticmethod
     def scrape_entry_categories(entry):
@@ -447,8 +414,13 @@ def load_config(configFile='config.conf'):
     :param configFile:
     :return:
     """
+    if not os.path.isfile(configFile):
+        print('load_config: error configFile={} is not a file, check the path.'.format(configFile))
+        exit(1)
     config = configparser.ConfigParser()
+    print('load_config: ConfigParser initialized, about to read configFile={}'.format(configFile))
     config.read(configFile)
+    print('load_config: ConfigParser finished reading configFile')
     return config
 
 def is_feed_running(lock_tcp_port):
@@ -492,10 +464,13 @@ if __name__ == '__main__':
         ssl._create_default_https_context = ssl._create_unverified_context
         print("wp_tweeting_bot: ssl: create unverified context as a default https context")
     config = load_config(sys.argv[1])
+    print(config.sections())
     for section in config.sections():
         if config.has_option(section, 'feed_url'):
+            print('wp_tweeting_bot: Creating URLFeed')
             feed = URLFeed(config, section)
         elif config.has_option(section, 'feed_path'):
+            print('wp_tweeting_bot: Creating FileFeed')
             feed = FileFeed(config, section)
 
         if config.has_option(section, 'lock_tcp_port'):
