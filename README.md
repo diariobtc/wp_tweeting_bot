@@ -34,10 +34,10 @@ repetition_interval_in_seconds=43200
 lock_tcp_port=60001
 dry_run=false
 shuffle=true
-oauth_token=
-oauth_token_secret=
-oauth_consumer_key=
-oauth_consumer_secret=
+api_key=
+api_secret=
+access_token=
+access_token_secret=
 
 [yourblog.com]
 feed_url=https://www.yourblog.com/index.php/feed/
@@ -47,10 +47,10 @@ intervals_between_tweets_in_seconds=60
 attach_featured_images=true
 dry_run=false
 expirable_categories=markets:86400
-oauth_token=
-oauth_token_secret=
-oauth_consumer_key=
-oauth_consumer_secret=
+api_key=
+api_secret=
+access_token=
+access_token_secret=
 
 [yourOtherBlog.com]
 feed_url=https://www.yourotherblog.com/index.php/feed/
@@ -59,10 +59,10 @@ max_days_in_rotation=2
 intervals_between_tweets_in_seconds=300
 attach_featured_images=false
 dry_run=true
-oauth_token=
-oauth_token_secret=
-oauth_consumer_key=
-oauth_consumer_secret=
+api_key=
+api_secret=
+access_token=
+access_token_secret=
 ```
 
 
