@@ -10,7 +10,7 @@ import ssl
 import threading
 import random
 import socket
-from twitter import Twitter, OAuth, TwitterHTTPError
+from twitter import Twitter2, OAuth2, TwitterHTTPError
 from bs4 import BeautifulSoup
 
 TWITTER_CONSIDERED_URL_LENGHT = 23
@@ -26,10 +26,6 @@ class Feed(object):
     dry_run method is optional. Just needed to do testing.
     """
     def __init__(self, config, section):
-        self.oauth_token = config.get(section, 'oauth_token')
-        self.oauth_token_secret = config.get(section, 'oauth_token_secret')
-        self.oauth_consumer_key = config.get(section, 'oauth_consumer_key')
-        self.oauth_consumer_secret = config.get(section, 'oauth_consumer_secret')
         self.dry_run = config.getboolean(section, 'dry_run')
         self.intervals_between_tweets_in_seconds = config.getint(section, 'intervals_between_tweets_in_seconds')
         self.max_days_in_rotation = -1
@@ -41,9 +37,11 @@ class Feed(object):
             self.max_seconds_in_rotation = self.max_days_in_rotation * 24 * 60 * 60
 
         # Auth Credentials
-        self.oauth = OAuth(self.oauth_token, self.oauth_token_secret, self.oauth_consumer_key, self.oauth_consumer_secret)
-        self.twitter_api = Twitter(auth=self.oauth)
-        self.twitter_upload_api = Twitter(auth=self.oauth, domain='upload.twitter.com')
+        self.oauth2_bearer_token = config.get(section, 'oauth2_bearer_token')
+        print("Feed.__init__: oauth2_bearer_token={}".format(self.oauth2_bearer_token))
+        self.oauth2 = OAuth2(bearer_token=self.oauth2_bearer_token)
+        self.twitter_api = Twitter2(auth=self.oauth2)
+        self.twitter_upload_api = Twitter2(auth=self.oauth2, domain='upload.twitter.com')
 
     def process_tweets(self):
         raise NotImplementedError
@@ -125,33 +123,34 @@ class FileFeed(Feed):
         if self.max_seconds_in_rotation > 0 and tweet['first_pub_ts'] > 0:
             time_since_first_pub = int(time.time()) - tweet['first_pub_ts']
             if time_since_first_pub > self.max_seconds_in_rotation:
-                print("tweet_id_due() OUT OF ROTATION max_seconds_in_rotation - " + tweet['msg'])
+                print("FileFeed.tweet_in_rotation: OUT OF ROTATION max_seconds_in_rotation - " + tweet['msg'])
                 return False
         return True
 
     def tweet_is_due(self, tweet):
         time_since_last_pub = int(time.time()) - tweet['last_pub_ts']
         is_due = time_since_last_pub > self.repetition_interval_in_seconds
-        print("tweet_is_due(): " + str(is_due) + " time_since_last_pub=" + str(time_since_last_pub) + "s vs rep_interval=" + str(self.repetition_interval_in_seconds) + "s) - " + tweet['msg'])
+        print("FileFeed.tweet_is_due: " + str(is_due) + " time_since_last_pub=" + str(time_since_last_pub) + "s vs rep_interval=" + str(self.repetition_interval_in_seconds) + "s) - " + tweet['msg'])
         return is_due
 
     def file_was_modified(self):
         return self.file_feed_last_modified != os.stat(self.feed_path).st_mtime
 
     def process_tweets(self):
-        print("Processing from FileFeed")
+        print("FileFeed.process_tweets: invoking load_tweets...")
         try:
             self.tweets = FileFeed.load_tweets(self.feed_path, self.shuffle)
         except Exception as e:
             raise e
 
         index = 0
+        print("FileFeed.process_tweets: tweets loaded sucessfully.")
         while True:
             if not os.path.isfile(self.feed_path):
-                raise IOError("%s no longer a valid file, aborting execution" % self.feed_path)
+                raise IOError("FileFeed.process_tweets: {} no longer a valid file, aborting execution".format(self.feed_path))
 
             if self.file_was_modified():
-                print("Feed file was modified!, updating tweets")
+                print("FileFeed.process_tweets: Feed file was modified!, updating tweets")
                 self.file_feed_last_modified = os.stat(self.feed_path).st_mtime
                 index = 0
                 self.update_tweets()
@@ -161,31 +160,33 @@ class FileFeed(Feed):
 
             if not self.tweet_in_rotation(tweet) or (tweet['last_pub_ts'] > 0 and not self.tweet_is_due(tweet)):
                 if not self.tweet_in_rotation(tweet):
-                   print("Tweet no longer in rotation (%s)" % tweet['msg'])
+                   print("FileFeed.process_tweets: Tweet no longer in rotation (%s)" % tweet['msg'])
                 elif tweet['last_pub_ts'] > 0 and not self.tweet_is_due(tweet):
-                   print("It's too soon to publish this tweet again (%s)" % tweet['msg'])
+                   print("FileFeed.process_tweets: It's too soon to publish this tweet again (%s)" % tweet['msg'])
                 if index == len(self.tweets)-1:
-                    print("\nsleeping (all tweets non-due, avoid cpu hogging)", self.intervals_between_tweets_in_seconds, "seconds... ZZzzz zzz")
+                    print("\npFileFeed.rocess_tweets: sleeping (all tweets non-due, avoid cpu hogging)", self.intervals_between_tweets_in_seconds, "seconds... ZZzzz zzz")
                     if not self.dry_run:
                         time.sleep(self.intervals_between_tweets_in_seconds)
                     else:
-                        print("[DRY-RUN] sleeping 1 second")
+                        print("FileFeed.process_tweets: [DRY-RUN] sleeping 1 second")
                         time.sleep(1)
                 index = inc_index(index, self.tweets)
                 continue
 
             if not self.tweet_is_valid(tweet['msg']):
-                print("The tweet located in ", self.feed_path, " line ", index+1 , " isn't valid.")
+                print("FileFeed.process_tweets: The tweet located in ", self.feed_path, " line ", index+1 , " isn't valid.")
                 index = inc_index(index, self.tweets)
                 continue
 
             if self.dry_run:
-                print("[DRY-RUN tweet! (", index, ")] tweet['msg'], )", tweet['msg'],"\n")
+                print("FileFeed.process_tweets: [DRY-RUN tweet! (", index, ")] tweet['msg'], )", tweet['msg'],"\n")
             else:
                 try:
+                    print(f"FileFeed.process_tweets: tweeting index={index}")
                     self.twitter_api.statuses.update(status=tweet['msg'])
-                except TwitterHTTPError:
-                    print("Skipping ", tweet['msg'], ' considered as a duplicate')
+                except TwitterHTTPError as e:
+                    print(e)
+                    print("FileFeed.process_tweets: Skipping ", tweet['msg'], ' considered as a duplicate')
 
             tweet['last_pub_ts'] = int(time.time())
             self.tweets[index] = tweet # update the list with the modified dict
@@ -195,28 +196,30 @@ class FileFeed(Feed):
                 print("\nsleeping ", self.intervals_between_tweets_in_seconds, "seconds... ZZzzz zzz")
                 time.sleep(self.intervals_between_tweets_in_seconds)
             else:
-                print("[DRY-RUN sleeping 1 sec]")
+                print("FileFeed.process_tweets: [DRY-RUN sleeping 1 sec]")
                 time.sleep(1)
 
     @staticmethod
     def load_tweets(feed_path, shuffle):
+        print(f"FileFeed.load_tweets: feed_path={feed_path}, shuffle={shuffle}")
         tweets = []
         if not os.path.isfile(feed_path):
-            print("%s is not a file" % feed_path)
-            raise IOError("%s is not a file", feed_path)
-
+            print("FileFeed.load_tweets: {} is not a file".format(feed_path))
+            raise IOError("load_tweets: {} is not a file".format(feed_path))
+        print("FileFeed.load_tweets: feed path was OK")
         with open(feed_path, 'r') as tweets_file:
             tweets = [{'msg': t, 'last_pub_ts': 0, 'first_pub_ts':0} for t in tweets_file.readlines()]
-
+        print("FileFeed.load_tweets: tweets loaded from file.")
         last_modification = os.stat(feed_path).st_mtime
 
         if len(tweets) == 0:
-            raise IOError("%s file is empty ", feed_path)
+            raise IOError("FileFeed.load_tweets: {} file is empty ".format(feed_path))
 
         if shuffle:
             print("FileFeed.load_tweets: Randomizing tweets")
             random.shuffle(tweets)
             random.shuffle(tweets)
+        print("FileFeed.load_tweets: Loaded {} tweets".format(len(tweets)))
 
         return tweets
 
@@ -247,12 +250,12 @@ class URLFeed(Feed):
         print("URLFeed.process_tweets: got parsed feed_dict")
 
         num_tweets = len(feed_dict.entries)
-        print("Got " + str(num_tweets) + " tweets from " + self.feed_url)
+        print("URLFeed.process_tweets: Got " + str(num_tweets) + " tweets from " + self.feed_url)
         if self.num_last_tweets != -1:
             num_tweets = min(self.num_last_tweets, len(feed_dict.entries))
 
         if self.dry_run and num_tweets is 0:
-            print("[DRY-RUN] Got", num_tweets,"tweets")
+            print("URLFeed.process_tweets: [DRY-RUN] Got", num_tweets,"tweets")
 
         for i in range(num_tweets):
             entry = feed_dict.entries[i]
@@ -265,7 +268,7 @@ class URLFeed(Feed):
 
             if (now-seconds_old) > self.max_seconds_in_rotation:
                 if self.dry_run:
-                    print("[DRY-RUN (", i, ")] skipping (too old) ", title)
+                    print("URLFeed.process_tweets: [DRY-RUN (", i, ")] skipping (too old) ", title)
                     print()
                 continue
 
@@ -273,18 +276,18 @@ class URLFeed(Feed):
             if expirable_category_matched is not None:
                 if (now-seconds_old) > expirable_category_matched.max_seconds_in_rotation:
                     if self.dry_run:
-                        print("[DRY-RUN] (",i, ")] skipping (expirable category ", expirable_category_matched.category_name ," too old) ", title)
+                        print("URLFeed.process_tweets: [DRY-RUN] (",i, ")] skipping (expirable category ", expirable_category_matched.category_name ," too old) ", title)
                         print()
                     continue
                 elif self.dry_run:
-                    print("[DRY-RUN] (",i, ")] has expirable category ", expirable_category_matched.category_name ," but still fresh")
+                    print("URLFeed.process_tweets: [DRY-RUN] (",i, ")] has expirable category ", expirable_category_matched.category_name ," but still fresh")
 
             if self.attach_featured_images:
                 featured_image_url = None
                 if not self.dry_run:
                     featured_image_url = URLFeed.scrape_entry_og_image(entry)
                 else:
-                    print("[DRY-RUN] scrape and download og:image for entry " + entry.link)
+                    print("URLFeed.process_tweets: [DRY-RUN] scrape and download og:image for entry " + entry.link)
 
                 if featured_image_url is not None:
                     if not self.dry_run:
@@ -295,22 +298,22 @@ class URLFeed(Feed):
                         else:
                           self.twitter_api.statuses.update(status=title + " " + entry.link)
                     else:
-                        print("[DRY-RUN (", i, ")] ", title + " " + entry.link, " (+img attachment - ", featured_image_url, ")")
-                        print("[DRY-RUN (", i, ")] time() -> ", time.mktime(entry.published_parsed))
+                        print("URLFeed.process_tweets: [DRY-RUN (", i, ")] ", title + " " + entry.link, " (+img attachment - ", featured_image_url, ")")
+                        print("URLFeed.process_tweets: [DRY-RUN (", i, ")] time() -> ", time.mktime(entry.published_parsed))
                         img_data = download_image(featured_image_url)
-                        print("[DRY-RUN (", i, ")] ", len(img_data))
+                        print("URLFeed.process_tweets: [DRY-RUN (", i, ")] ", len(img_data))
                 else:
-                    print("Could not scrape featured image url from ", entry.link, " (regex might need maintenance)")
+                    print("URLFeed.process_tweets: Could not scrape featured image url from ", entry.link, " (regex might need maintenance)")
             else:
                 if not self.dry_run:
                     try:
                         self.twitter_api.statuses.update(status=title + " " + entry.link) # Call twitter API
                     except TwitterHTTPError as e:
-                        print("TwitterHTTPError", e)
-                        print("Could not tweet status=" + title)
+                        print("URLFeed.process_tweets: TwitterHTTPError", e)
+                        print("URLFeed.process_tweets: Could not tweet status=" + title)
                         continue
                 else:
-                    print("[DRY-RUN (", i, ")] ", title + " " + entry.link)
+                    print("URLFeed.process_tweets: [DRY-RUN (", i, ")] ", title + " " + entry.link)
 
             if self.intervals_between_tweets_in_seconds > 0:
                 if not self.dry_run:
@@ -319,10 +322,10 @@ class URLFeed(Feed):
                     print("[DRY-RUN (", i, ")] ", "sleep(1) instead of (", self.intervals_between_tweets_in_seconds,")\n")
                     time.sleep(1)
         if self.serversock is not None:
-            print("Done with all the tweets, shutting down socket on port %d" % self.lock_tcp_port)
+            print("URLFeed.process_tweets: Done with all the tweets, shutting down socket on port %d" % self.lock_tcp_port)
             self.serversock.shutdown(socket.SHUT_RDWR)
             self.serversock.close()
-            print("Shutdown server on port %d" % self.lock_tcp_port)
+            print("URLFeed.process_tweets: Shutdown server on port %d" % self.lock_tcp_port)
 
 
     @staticmethod
@@ -453,13 +456,13 @@ def is_feed_running(lock_tcp_port):
     sock.settimeout(1)
     server_address = ('localhost',lock_tcp_port)
     try:
-        print('Connecting to port %d ...' % lock_tcp_port)
+        print('is_feed_running: Connecting to port %d ...' % lock_tcp_port)
         sock.connect(server_address)
-        print('Connected, feed is running already')
+        print('is_feed_running: Connected, feed is running already')
         sock.close()
         return True
     except:
-        print('Could not connect to port %d, feed not running' % lock_tcp_port)
+        print('is_feed_running: Could not connect to port %d, feed not running' % lock_tcp_port)
         sock.close()
         return False
 
@@ -472,36 +475,36 @@ def start_feed_lock_tcp_server(lock_tcp_port,feed):
     feed.serversock = serversock
     feed.lock_tcp_port = lock_tcp_port
     while True:
-        print("Listening for connections on port %d" % lock_tcp_port)
+        print("start_feed_lock_tcp_server: Listening for connections on port %d" % lock_tcp_port)
         try:
             clientsock, addr = serversock.accept()
-            print("Got connection from %s", clientsock)
+            print("start_feed_lock_tcp_server: Got connection from %s", clientsock)
         except Exception as e:
             print("start_feed_lock_tcp_server.accept() error -> {}", e)
-            print("serversock was shutdown, ending start_feed_lock_tcp_server, not accepting more connections")
+            print("start_feed_lock_tcp_server: serversock was shutdown, ending start_feed_lock_tcp_server, not accepting more connections")
             return
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Error: config file path not passed.\n")
+        print("wp_tweeting_bot: Error: config file path not passed.\n")
         sys.exit(1)
     if hasattr(ssl, '_create_unverified_context'):
         ssl._create_default_https_context = ssl._create_unverified_context
-        print("ssl: create unverified context as a default https context")
+        print("wp_tweeting_bot: ssl: create unverified context as a default https context")
     config = load_config(sys.argv[1])
-    for section_name in config.sections():
-        if config.has_option(section_name, 'feed_url'):
-            feed = URLFeed(config, section_name)
-        elif config.has_option(section_name, 'feed_path'):
-            feed = FileFeed(config, section_name)
+    for section in config.sections():
+        if config.has_option(section, 'feed_url'):
+            feed = URLFeed(config, section)
+        elif config.has_option(section, 'feed_path'):
+            feed = FileFeed(config, section)
 
-        if config.has_option(section_name, 'lock_tcp_port'):
-            lock_tcp_port = int(config.get(section_name,'lock_tcp_port'))
+        if config.has_option(section, 'lock_tcp_port'):
+            lock_tcp_port = int(config.get(section,'lock_tcp_port'))
             if is_feed_running(lock_tcp_port):
-                print("There's already a bot running on port %d for %s, not starting" % (lock_tcp_port, section_name))
+                print("wp_tweeting_bot: There's already a bot running on port %d for %s, not starting" % (lock_tcp_port, section))
                 continue
             else:
-                print("Found no tcp server on port %d for %s, starting our own" % (lock_tcp_port, section_name))
+                print("wp_tweeting_bot: Found no tcp server on port %d for %s, starting our own" % (lock_tcp_port, section))
                 thread = threading.Thread(target=start_feed_lock_tcp_server, args=(lock_tcp_port,feed,))
                 thread.start()
 
