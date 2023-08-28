@@ -5,7 +5,7 @@ Tweeting bot to promote the last N posts from a blog's RSS feed, and/or to rotat
 Your tweets won't be read by all your followers if you just tweet them once.
 Your tweets will be more attractive if they have image attachments.
 
-This bot, fetches your last posts titles and featured images and it will tweet up to N last posts found every time it runs.
+This bot, fetches your last posts titles it will tweet up to N last posts found every time it runs.
 
 Ideally you should set it up to run on a cronjob every few hours, so you can keep your last posts on rotation.
 
